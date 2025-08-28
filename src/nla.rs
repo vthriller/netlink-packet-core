@@ -375,15 +375,6 @@ mod tests {
         assert_eq!(nla_align!(get_len() - 3), usize::MAX);
     }
 
-    // compile-time test: it should be possible to pass &[u8] through
-    // NlasIterator and return one of its output &[u8]s without facing
-    // compiler error about lifetimes and returning borrows from something
-    // that this funciton owns
-    fn last_nla_from_buffer(nlas: &[u8]) -> Option<Result<&[u8], DecodeError>> {
-        NlasIterator::new(nlas).last()
-            .map(|nla| nla.map(|nla| nla.value()))
-    }
-
     #[test]
     fn test_nlas_iterator() {
         // sample NFTA_LIST_ELEM from nftables, with nested nlas at the end
@@ -395,15 +386,33 @@ mod tests {
             0x1b, 0x0c, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x8e, 0x14,
             0x56, 0x39
         ];
-        let mut iter = NlasIterator::new(NESTED_NLAS);
-        // DecodeError does not implement PartialEq, hence
-        // unwrap() and is_none()
-        assert_eq!(iter.next().unwrap().unwrap().value(), &NESTED_NLAS[4..12]);
-        assert_eq!(iter.next().unwrap().unwrap().value(), &NESTED_NLAS[16..]);
-        assert!(iter.next().is_none());
+
+        let last = {
+            let mut iter = NlasIterator::new(NESTED_NLAS);
+
+            // DecodeError does not implement PartialEq, hence
+            // unwrap() and is_none()
+
+            assert_eq!(
+                iter.next().unwrap().unwrap().value(),
+                &NESTED_NLAS[4..12]
+            );
+
+            // it should be possible to pass &[u8] through
+            // NlasIterator and return one of its output &[u8]s without facing
+            // compiler error about lifetimes and returning borrows from
+            // something that this funciton owns
+            let last = iter.next().unwrap().unwrap().value();
+            // asserted later
+
+            assert!(iter.next().is_none());
+
+            last
+        };
+        assert_eq!(last, &NESTED_NLAS[16..]);
 
         // this sholud be an Err()
         let truncated = &NESTED_NLAS[ .. NESTED_NLAS.len()-1];
-        assert!(last_nla_from_buffer(truncated).unwrap().is_err());
+        assert!(NlasIterator::new(truncated).last().unwrap().is_err());
     }
 }
